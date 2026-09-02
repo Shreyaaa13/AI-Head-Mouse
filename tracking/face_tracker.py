@@ -5,6 +5,7 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import time
+import pyautogui
 
 from utils.camera import Camera
 from mouse.cursor_controller import CursorController
@@ -74,6 +75,53 @@ def run_face_tracking():
 
     camera.release()
     cv2.destroyAllWindows()
+
+
+def run_face_tracking():
+    landmarker = create_landmarker()
+    camera = Camera()
+    cursor = CursorController()
+
+    print("Face tracking + cursor control started. Press 'q' to quit.")
+    print("Move your mouse to a screen corner at any time to force-stop (failsafe).")
+
+    try:
+        while True:
+            frame = camera.get_frame()
+            if frame is None:
+                print("Error: Could not read frame.")
+                break
+
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+
+            timestamp_ms = int(time.time() * 1000)
+            result = landmarker.detect_for_video(mp_image, timestamp_ms)
+
+            if result.face_landmarks:
+                landmarks = result.face_landmarks[0]
+                frame = draw_landmarks(frame, landmarks)
+
+                nose = landmarks[NOSE_TIP_INDEX]
+                cursor.move_to(nose.x, nose.y)
+
+                cv2.putText(frame, "Face Detected", (20, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            else:
+                cv2.putText(frame, "No Face Detected", (20, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+            cv2.imshow("AI Head Mouse - Face Tracking", frame)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+    except pyautogui.FailSafeException:
+        print("\nFailsafe triggered — program stopped safely.")
+
+    finally:
+        camera.release()
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
