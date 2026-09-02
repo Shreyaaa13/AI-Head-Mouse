@@ -31,11 +31,14 @@ def create_landmarker():
     return vision.FaceLandmarker.create_from_options(options)
 
 
+KEY_LANDMARK_INDICES = [1, 33, 133, 362, 263, 61, 291]  # nose tip + eye corners + mouth corners
+
 def draw_landmarks(frame, face_landmarks):
     h, w, _ = frame.shape
-    for landmark in face_landmarks:
+    for idx in KEY_LANDMARK_INDICES:
+        landmark = face_landmarks[idx]
         x, y = int(landmark.x * w), int(landmark.y * h)
-        cv2.circle(frame, (x, y), 1, (0, 255, 0), -1)
+        cv2.circle(frame, (x, y), 3, (0, 255, 0), -1)
     return frame
 
 
