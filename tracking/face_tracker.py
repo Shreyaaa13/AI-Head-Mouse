@@ -12,9 +12,11 @@ from mouse.cursor_controller import CursorController
 
 MODEL_PATH = "assets/face_landmarker.task"
 NOSE_TIP_INDEX = 1
+KEY_LANDMARK_INDICES = [1, 33, 133, 362, 263, 61, 291]  # nose tip + eye corners + mouth corners
 
 BLINK_THRESHOLD = 0.5       # blendshape score above this = eye considered closed
 BLINK_COOLDOWN_SEC = 0.8    # minimum time between registered clicks
+HOLD_STOP_SEC = 2.0         # how long both eyes must stay closed to force-stop
 
 
 def create_landmarker():
@@ -31,8 +33,6 @@ def create_landmarker():
     return vision.FaceLandmarker.create_from_options(options)
 
 
-KEY_LANDMARK_INDICES = [1, 33, 133, 362, 263, 61, 291]  # nose tip + eye corners + mouth corners
-
 def draw_landmarks(frame, face_landmarks):
     h, w, _ = frame.shape
     for idx in KEY_LANDMARK_INDICES:
@@ -43,7 +43,6 @@ def draw_landmarks(frame, face_landmarks):
 
 
 def get_blink_scores(blendshapes):
-    """Returns (left_blink_score, right_blink_score) from blendshape list."""
     left_score = 0.0
     right_score = 0.0
     for category in blendshapes:
@@ -60,10 +59,12 @@ def run_face_tracking():
     cursor = CursorController()
 
     last_click_time = 0.0
+    eyes_closed_since = None  # timestamp when continuous closure started
 
-    print("Face tracking + cursor control started. Press 'q' to quit.")
-    print("Blink both eyes together to click.")
-    print("Move your mouse to a screen corner at any time to force-stop (failsafe).")
+    print("Face tracking + cursor control started.")
+    print("Blink both eyes briefly to click.")
+    print("Hold both eyes closed for 2 seconds to force-stop.")
+    print("(Backup) Press 'q' or move mouse to a screen corner to stop.")
 
     try:
         while True:
@@ -88,7 +89,6 @@ def run_face_tracking():
                 cv2.putText(frame, "Face Detected", (20, 40),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
-                # --- Blink detection ---
                 if result.face_blendshapes:
                     blendshapes = result.face_blendshapes[0]
                     left_score, right_score = get_blink_scores(blendshapes)
@@ -98,14 +98,40 @@ def run_face_tracking():
 
                     now = time.time()
                     both_closed = left_score > BLINK_THRESHOLD and right_score > BLINK_THRESHOLD
-                    cooldown_ok = (now - last_click_time) > BLINK_COOLDOWN_SEC
 
-                    if both_closed and cooldown_ok:
-                        pyautogui.click()
-                        last_click_time = now
-                        cv2.putText(frame, "CLICK!", (20, 200),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
-                        print("Blink click registered.")
+                    if both_closed:
+                        if eyes_closed_since is None:
+                            eyes_closed_since = now
+
+                        closed_duration = now - eyes_closed_since
+
+                        # Show a progress hint once it's been closed a little while
+                        if closed_duration > 0.3:
+                            cv2.putText(frame, f"Holding: {closed_duration:.1f}s / {HOLD_STOP_SEC}s",
+                                        (20, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 2)
+
+                        if closed_duration >= HOLD_STOP_SEC:
+                            print("\nHeld blink detected — stopping safely.")
+                            break
+
+                        # Quick click only fires on the way to becoming a hold;
+                        # cooldown prevents repeat clicks while eyes stay closed
+                        cooldown_ok = (now - last_click_time) > BLINK_COOLDOWN_SEC
+                        if cooldown_ok and eyes_closed_since == now:
+                            pass  # first frame of closure; wait to see if it's a click or a hold
+
+                    else:
+                        # Eyes just opened — if it was a short closure, treat as a click
+                        if eyes_closed_since is not None:
+                            closed_duration = now - eyes_closed_since
+                            cooldown_ok = (now - last_click_time) > BLINK_COOLDOWN_SEC
+                            if closed_duration < HOLD_STOP_SEC and cooldown_ok:
+                                pyautogui.click()
+                                last_click_time = now
+                                cv2.putText(frame, "CLICK!", (20, 200),
+                                            cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
+                                print("Blink click registered.")
+                        eyes_closed_since = None
 
             else:
                 cv2.putText(frame, "No Face Detected", (20, 40),

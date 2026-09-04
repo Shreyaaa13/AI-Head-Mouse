@@ -97,12 +97,22 @@ def run_calibration():
         print("Calibration incomplete, not saving.")
         return
 
-    # Build min/max ranges from captured points
+        # Build min/max ranges from captured points, with a safety margin
+    x_min_raw = min(captured["LEFT"][0], captured["CENTER"][0])
+    x_max_raw = max(captured["RIGHT"][0], captured["CENTER"][0])
+    y_min_raw = min(captured["UP"][1], captured["CENTER"][1])
+    y_max_raw = max(captured["DOWN"][1], captured["CENTER"][1])
+
+    MARGIN = 0.05  # widen range by 15% on each side
+
+    x_span = x_max_raw - x_min_raw
+    y_span = y_max_raw - y_min_raw
+
     calibration_data = {
-        "x_min": min(captured["LEFT"][0], captured["CENTER"][0]),
-        "x_max": max(captured["RIGHT"][0], captured["CENTER"][0]),
-        "y_min": min(captured["UP"][1], captured["CENTER"][1]),
-        "y_max": max(captured["DOWN"][1], captured["CENTER"][1]),
+        "x_min": x_min_raw - (x_span * MARGIN),
+        "x_max": x_max_raw + (x_span * MARGIN),
+        "y_min": y_min_raw - (y_span * MARGIN),
+        "y_max": y_max_raw + (y_span * MARGIN),
     }
 
     os.makedirs(os.path.dirname(CALIBRATION_FILE), exist_ok=True)
